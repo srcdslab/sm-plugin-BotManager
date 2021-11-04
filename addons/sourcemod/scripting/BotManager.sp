@@ -1,9 +1,12 @@
 #include <sourcemod>
 #include <sdktools>
+#include <sdkhooks>
+#include <smlib>
 
 #pragma semicolon 1
 
-#define BOT_NAME_FILE "configs/botnames.cfg"
+#define BOT_NAME_FILE			"configs/botnames.cfg"
+#define BOT_RESTRICTIONS_FILE	"configs/botrestrictions.cfg"
 
 // this array will store the names loaded
 new Handle:bot_names;
@@ -12,11 +15,12 @@ new Handle:bot_names;
 // bot_names, use these in order
 new Handle:name_redirects;
 
+char g_sRestrictedWeapons[64][64];
+int g_iRestrictedWeapons = 0;
+
 // this is the next index to use into name_redirects
 // update this each time you use a name
 new next_index;
-
-// new String:g_szPlayerManager[50] = "";
 
 // Entities
 new g_iPlayerResourceEntity	= -1;
@@ -28,7 +32,7 @@ new g_iPing				= -1;
 new Handle:g_hPingTimer = INVALID_HANDLE;
 
 // ConVars
-new Handle:g_hMinPing 	= INVALID_HANDLE;
+new Handle:g_hMinPing	= INVALID_HANDLE;
 new Handle:g_hMaxPing	= INVALID_HANDLE;
 new Handle:g_hInterval	= INVALID_HANDLE;
 new Handle:g_hPrefix	= INVALID_HANDLE;
@@ -40,8 +44,8 @@ public Plugin:myinfo =
 {
 	name = "BotManager",
 	author = "Rakeri, Knagg0, maxime1907",
-	description = "Manage bot's name and ping",
-	version = "1.0",
+	description = "Manage bot's name, ping and weapon restictions",
+	version = "1.1",
 	url = ""
 }
 
@@ -55,6 +59,9 @@ public void OnPluginStart()
 	g_hMaxPing	= CreateConVar("sm_botmanager_maxping", "75", "Maximum ping of the bot", FCVAR_NOTIFY);
 	g_hInterval	= CreateConVar("sm_botmanager_interval", "3.0", "The number of seconds to wait before a ping change", FCVAR_NOTIFY);
 
+	// register our commands
+	RegServerCmd("sm_botmanager_reload", Command_Reload);
+
 	// hook team change, connect to supress messages
 	HookEvent("player_connect", Event_PlayerConnect, EventHookMode_Pre);
 	HookEvent("player_team", Event_PlayerTeam, EventHookMode_Pre);
@@ -62,20 +69,9 @@ public void OnPluginStart()
 	// trickier... name changes are user messages, so...
 	HookUserMessage(GetUserMessageId("SayText2"), UserMessage_SayText2, true);
 
-	// register our commands
-	RegServerCmd("sm_botmanager_reload", Command_Reload);
-
 	g_iPing	= FindSendPropInfo("CPlayerResource", "m_iPing");
 
-	// new String:szBuffer[100];
-	// GetGameFolderName(szBuffer, sizeof(szBuffer));
-
-	// if (StrEqual("cstrike", szBuffer))
-	// 	strcopy(g_szPlayerManager, sizeof(g_szPlayerManager), "cs_player_manager");
-	// else if (StrEqual("dod", szBuffer))
-	// 	strcopy(g_szPlayerManager, sizeof(g_szPlayerManager), "dod_player_manager");
-	// else
-	// 	strcopy(g_szPlayerManager, sizeof(g_szPlayerManager), "player_manager");
+	LoadWeaponRestrictions();
 
 	AutoExecConfig(true);
 }
@@ -94,24 +90,18 @@ public void OnConfigsExecuted()
 	g_hPingTimer = CreateTimer(GetConVarFloat(g_hInterval), ChangeBotsPing, _, TIMER_REPEAT);
 }
 
-stock Action ChangeBotsPing(Handle:timer)
+public void OnClientPutInServer(int client)
 {
-	if (g_iPlayerResourceEntity == -1 || g_iPing == -1)
-		return Plugin_Continue;
+	SDKHook(client, SDKHook_WeaponEquipPost, OnWeaponEquip);
+}
 
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if(!IsValidEdict(i) || !IsClientInGame(i) || !IsFakeClient(i) || IsClientSourceTV(i))
-			continue;
-
-		SetEntData(g_iPlayerResourceEntity, g_iPing + (i * 4), GetRandomInt(GetConVarInt(g_hMinPing), GetConVarInt(g_hMaxPing)));
-	}
-	return Plugin_Continue;
+public void OnClientDisconnect(int client)
+{
+	SDKUnhook(client, SDKHook_WeaponEquipPost, OnWeaponEquip);
 }
 
 public void OnMapStart()
 {
-	// g_iPlayerResourceEntity = FindEntityByClassname(MaxClients + 1, g_szPlayerManager);
 	g_iPlayerResourceEntity = GetPlayerResourceEntity();
 	ReloadNames();
 	GenerateRedirects();
@@ -120,9 +110,10 @@ public void OnMapStart()
 // reload bot name, via console
 public Action:Command_Reload(args)
 {
+	LoadWeaponRestrictions();
 	ReloadNames();
 	GenerateRedirects();
-	PrintToServer("[BotManager] Loaded %i names.", GetArraySize(bot_names));
+	PrintToServer("[BotManager] Loaded %i names and restricted.", GetArraySize(bot_names));
 }
 
 // handle client connection, to change the names...
@@ -238,6 +229,44 @@ public Action:Event_PlayerConnect(Handle:event, const String:name[], bool:dontBr
 	return Plugin_Continue;
 }
 
+public Action OnWeaponEquip(int client, int entity)
+{
+	if(!IsValidEntity(entity))
+		return;
+
+	int HammerID = GetEntProp(entity, Prop_Data, "m_iHammerID");
+	// Should not be cleaned since it's a map spawned weapon
+	if(HammerID)
+		return;
+
+	// Check if its a valid client
+	if (!IsValidEdict(client) || !IsClientInGame(client) || !IsFakeClient(client) || IsClientSourceTV(client))
+		return;
+
+	char sClassName[64];
+	GetEntityClassname(entity, sClassName,sizeof(sClassName));
+
+	for (int i = 0; i < g_iRestrictedWeapons; i++)
+	{
+		if (StrEqual(g_sRestrictedWeapons[i], sClassName, true))
+			Client_RemoveWeapon(client, sClassName, false, true);
+	}
+}
+
+stock Action ChangeBotsPing(Handle:timer)
+{
+	if (g_iPlayerResourceEntity == -1 || g_iPing == -1)
+		return Plugin_Continue;
+
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if(!IsValidEdict(i) || !IsClientInGame(i) || !IsFakeClient(i) || IsClientSourceTV(i))
+			continue;
+
+		SetEntData(g_iPlayerResourceEntity, g_iPing + (i * 4), GetRandomInt(GetConVarInt(g_hMinPing), GetConVarInt(g_hMaxPing)));
+	}
+	return Plugin_Continue;
+}
 
 // a function to generate name_redirects
 stock void GenerateRedirects()
@@ -335,4 +364,46 @@ stock void ReloadNames()
 	}
 	
 	CloseHandle(file);
+}
+
+stock void LoadWeaponRestrictions()
+{
+	g_iRestrictedWeapons = 0;
+	for (int i = 0; i < sizeof(g_sRestrictedWeapons); i++)
+		g_sRestrictedWeapons[i] = "";
+
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), BOT_RESTRICTIONS_FILE);
+
+	File file = OpenFile(path, "r");
+	if (file == INVALID_HANDLE)
+	{
+		LogError("Couldnt find %s", BOT_RESTRICTIONS_FILE);
+		return;
+	}
+
+	char sWeaponName[64] = "";
+	while (!IsEndOfFile(file))
+	{
+		if (!ReadFileLine(file, sWeaponName, sizeof(sWeaponName)))
+			break;
+		
+		// trim off comments starting with // or #
+		int commentstart;
+		commentstart = StrContains(sWeaponName, "//");
+		if (commentstart != -1)
+			sWeaponName[commentstart] = 0;
+
+		commentstart = StrContains(sWeaponName, "#");
+		if (commentstart != -1)
+			sWeaponName[commentstart] = 0;
+
+		// get rid of pesky whitespace
+		TrimString(sWeaponName);
+
+		g_sRestrictedWeapons[g_iRestrictedWeapons] = sWeaponName;
+		g_iRestrictedWeapons++;
+	}
+
+	delete file;
 }
