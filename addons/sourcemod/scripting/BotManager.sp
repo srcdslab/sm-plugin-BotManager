@@ -4,43 +4,44 @@
 #include <smlib>
 
 #pragma semicolon 1
+#pragma newdecls required
 
 #define BOT_NAME_FILE			"configs/botnames.cfg"
 #define BOT_RESTRICTIONS_FILE	"configs/botrestrictions.cfg"
 
 // this array will store the names loaded
-new ArrayList:bot_names;
+ArrayList bot_names;
 
 // this array will have a list of indexes to
 // bot_names, use these in order
-new ArrayList:name_redirects;
+ArrayList name_redirects;
 
 char g_sRestrictedWeapons[64][64];
 int g_iRestrictedWeapons = 0;
 
 // this is the next index to use into name_redirects
 // update this each time you use a name
-new next_index;
+int next_index;
 
 // Entities
-new g_iPlayerResourceEntity	= -1;
+int g_iPlayerResourceEntity	= -1;
 
 // Offsets
-new g_iPing				= -1;
+int g_iPing				= -1;
 
 // Timers
-new Handle:g_hPingTimer = null;
+Handle g_hPingTimer = null;
 
 // ConVars
-new ConVar:g_hMinPing	= null;
-new ConVar:g_hMaxPing	= null;
-new ConVar:g_hInterval	= null;
-new ConVar:g_hPrefix	= null;
-new ConVar:g_hRandom	= null;
-new ConVar:g_hAnnounce	= null;
-new ConVar:g_hSuppress	= null;
+ConVar g_hMinPing	= null;
+ConVar g_hMaxPing	= null;
+ConVar g_hInterval	= null;
+ConVar g_hPrefix	= null;
+ConVar g_hRandom	= null;
+ConVar g_hAnnounce	= null;
+ConVar g_hSuppress	= null;
 
-public Plugin:myinfo =
+public Plugin myinfo =
 {
 	name = "BotManager",
 	author = "Rakeri, Knagg0, maxime1907",
@@ -107,24 +108,25 @@ public void OnMapStart()
 }
 
 // reload bot name, via console
-public Action:Command_Reload(args)
+public Action Command_Reload(int args)
 {
 	LoadWeaponRestrictions();
 	ReloadNames();
 	GenerateRedirects();
 	PrintToServer("[BotManager] Loaded %i names and restricted.", bot_names.Length);
+	return Plugin_Continue;
 }
 
 // handle client connection, to change the names...
-public bool:OnClientConnect(client, String:rejectmsg[], maxlen)
+public bool OnClientConnect(int client, char[] rejectmsg, int maxlen)
 {
-	new loaded_names = bot_names.Length;
+	int loaded_names = bot_names.Length;
 
 	if (IsFakeClient(client) && !IsClientSourceTV(client) && loaded_names != 0)
 	{
 		// we got a bot, here, boss
 		
-		decl String:newname[MAX_NAME_LENGTH];
+		char newname[MAX_NAME_LENGTH];
 		bot_names.GetString(name_redirects.Get(next_index), newname, MAX_NAME_LENGTH);
 
 		next_index++;
@@ -144,14 +146,14 @@ public bool:OnClientConnect(client, String:rejectmsg[], maxlen)
 }
 
 // handle "SayText2" usermessages, including name change notifies!
-public Action:UserMessage_SayText2(UserMsg:msg_id, Handle:bf, const players[], playersNum, bool:reliable, bool:init)
+public Action UserMessage_SayText2(UserMsg msg_id, Handle bf, const int[] players, int playersNum, bool reliable, bool init)
 {
 	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
-	decl String:message[256];
+	char message[256];
 
 	BfRead bfRead = UserMessageToBfRead(bf);
 	bfRead.ReadShort(); // team color
@@ -173,14 +175,14 @@ public Action:UserMessage_SayText2(UserMsg:msg_id, Handle:bf, const players[], p
 }
 
 // handle player team change, to supress bot messages
-public Action:Event_PlayerTeam(Event:event, const String:name[], bool:dontBroadcast)
+public Action Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
 {
 	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
-	new client = GetClientOfUserId(event.GetInt("userid"));
+	int client = GetClientOfUserId(event.GetInt("userid"));
 	if (client == 0)
 	{
 		// weird error, ignore
@@ -197,24 +199,24 @@ public Action:Event_PlayerTeam(Event:event, const String:name[], bool:dontBroadc
 }
 
 // handle player connect, to supress bot messages
-public Action:Event_PlayerConnect(Event:event, const String:name[], bool:dontBroadcast)
+public Action Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast)
 {
 	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
-	decl String:networkID[32];
+	char networkID[32];
 	event.GetString("networkid", networkID, sizeof(networkID));
 
 	if(!dontBroadcast && StrEqual(networkID, "BOT"))
 	{
 		// we got a bot connectin', resend event as no-broadcast
-		decl String:clientName[MAX_NAME_LENGTH], String:address[32];
+		char clientName[MAX_NAME_LENGTH], address[32];
 		event.GetString("name", clientName, sizeof(clientName));
 		event.GetString("address", address, sizeof(address));
 
-		new Event:newEvent = CreateEvent("player_connect", true);
+		Event newEvent = CreateEvent("player_connect", true);
 		newEvent.SetString("name", clientName);
 		newEvent.SetInt("index", event.GetInt("index"));
 		newEvent.SetInt("userid", event.GetInt("userid"));
@@ -253,12 +255,12 @@ public Action OnWeaponEquip(int client, int entity)
 	}
 }
 
-stock Action ChangeBotsPing(Handle:timer)
+stock Action ChangeBotsPing(Handle timer)
 {
 	if (g_iPlayerResourceEntity == -1 || g_iPing == -1)
 		return Plugin_Continue;
 
-	for (new i = 1; i <= MaxClients; i++)
+	for (int i = 1; i <= MaxClients; i++)
 	{
 		if(!IsValidEdict(i) || !IsClientInGame(i) || !IsFakeClient(i) || IsClientSourceTV(i))
 			continue;
@@ -271,7 +273,7 @@ stock Action ChangeBotsPing(Handle:timer)
 // a function to generate name_redirects
 stock void GenerateRedirects()
 {
-	new loaded_names = bot_names.Length;
+	int loaded_names = bot_names.Length;
 
 	if (name_redirects != null)
 	{
@@ -280,7 +282,7 @@ stock void GenerateRedirects()
 		name_redirects = new ArrayList(1, loaded_names);
 	}
 
-	for (new i = 0; i < loaded_names; i++)
+	for (int i = 0; i < loaded_names; i++)
 	{
 		name_redirects.Set(i, i);
 		
@@ -302,7 +304,7 @@ stock void GenerateRedirects()
 stock void ReloadNames()
 {
 	next_index = 0;
-	decl String:path[PLATFORM_MAX_PATH];
+	char path[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, path, sizeof(path), BOT_NAME_FILE);
 	
 	if (bot_names != null)
@@ -312,7 +314,7 @@ stock void ReloadNames()
 		bot_names = new ArrayList(MAX_NAME_LENGTH);
 	}
 	
-	new File:file = OpenFile(path, "r");
+	File file = OpenFile(path, "r");
 	if (file == null)
 	{
 		//PrintToServer("bot name file unopened");
@@ -321,9 +323,9 @@ stock void ReloadNames()
 	
 	// this LENGTH*3 is sort of a hack
 	// don't make long lines, people!
-	decl String:newname[MAX_NAME_LENGTH*3];
-	decl String:formedname[MAX_NAME_LENGTH];
-	decl String:prefix[MAX_NAME_LENGTH];
+	char newname[MAX_NAME_LENGTH*3];
+	char formedname[MAX_NAME_LENGTH];
+	char prefix[MAX_NAME_LENGTH];
 
 	g_hPrefix.GetString(prefix, MAX_NAME_LENGTH);
 
@@ -335,7 +337,7 @@ stock void ReloadNames()
 		}
 		
 		// trim off comments starting with // or #
-		new commentstart;
+		int commentstart;
 		commentstart = StrContains(newname, "//");
 		if (commentstart != -1)
 		{
@@ -347,7 +349,7 @@ stock void ReloadNames()
 			newname[commentstart] = 0;
 		}
 		
-		new length = strlen(newname);
+		int length = strlen(newname);
 		if (length < 2)
 		{
 			// we loaded a bum name
