@@ -9,11 +9,11 @@
 #define BOT_RESTRICTIONS_FILE	"configs/botrestrictions.cfg"
 
 // this array will store the names loaded
-new Handle:bot_names;
+new ArrayList:bot_names;
 
 // this array will have a list of indexes to
 // bot_names, use these in order
-new Handle:name_redirects;
+new ArrayList:name_redirects;
 
 char g_sRestrictedWeapons[64][64];
 int g_iRestrictedWeapons = 0;
@@ -29,23 +29,23 @@ new g_iPlayerResourceEntity	= -1;
 new g_iPing				= -1;
 
 // Timers
-new Handle:g_hPingTimer = INVALID_HANDLE;
+new Handle:g_hPingTimer = null;
 
 // ConVars
-new Handle:g_hMinPing	= INVALID_HANDLE;
-new Handle:g_hMaxPing	= INVALID_HANDLE;
-new Handle:g_hInterval	= INVALID_HANDLE;
-new Handle:g_hPrefix	= INVALID_HANDLE;
-new Handle:g_hRandom	= INVALID_HANDLE;
-new Handle:g_hAnnounce	= INVALID_HANDLE;
-new Handle:g_hSuppress	= INVALID_HANDLE;
+new ConVar:g_hMinPing	= null;
+new ConVar:g_hMaxPing	= null;
+new ConVar:g_hInterval	= null;
+new ConVar:g_hPrefix	= null;
+new ConVar:g_hRandom	= null;
+new ConVar:g_hAnnounce	= null;
+new ConVar:g_hSuppress	= null;
 
 public Plugin:myinfo =
 {
 	name = "BotManager",
 	author = "Rakeri, Knagg0, maxime1907",
 	description = "Manage bot's name, ping and weapon restictions",
-	version = "1.1",
+	version = "1.2",
 	url = ""
 }
 
@@ -78,16 +78,15 @@ public void OnPluginStart()
 
 public void OnPluginEnd()
 {
-	if (g_hPingTimer != INVALID_HANDLE)
+	if (g_hPingTimer != null)
 	{
-		KillTimer(g_hPingTimer);
-		g_hPingTimer = INVALID_HANDLE;
+		delete g_hPingTimer;
 	}
 }
 
 public void OnConfigsExecuted()
 {
-	g_hPingTimer = CreateTimer(GetConVarFloat(g_hInterval), ChangeBotsPing, _, TIMER_REPEAT);
+	g_hPingTimer = CreateTimer(g_hInterval.FloatValue, ChangeBotsPing, _, TIMER_REPEAT);
 }
 
 public void OnClientPutInServer(int client)
@@ -113,20 +112,20 @@ public Action:Command_Reload(args)
 	LoadWeaponRestrictions();
 	ReloadNames();
 	GenerateRedirects();
-	PrintToServer("[BotManager] Loaded %i names and restricted.", GetArraySize(bot_names));
+	PrintToServer("[BotManager] Loaded %i names and restricted.", bot_names.Length);
 }
 
 // handle client connection, to change the names...
 public bool:OnClientConnect(client, String:rejectmsg[], maxlen)
 {
-	new loaded_names = GetArraySize(bot_names);
+	new loaded_names = bot_names.Length;
 
 	if (IsFakeClient(client) && !IsClientSourceTV(client) && loaded_names != 0)
 	{
 		// we got a bot, here, boss
 		
 		decl String:newname[MAX_NAME_LENGTH];
-		GetArrayString(bot_names, GetArrayCell(name_redirects, next_index), newname, MAX_NAME_LENGTH);
+		bot_names.GetString(name_redirects.Get(next_index), newname, MAX_NAME_LENGTH);
 
 		next_index++;
 		if (next_index > loaded_names - 1)
@@ -135,7 +134,7 @@ public bool:OnClientConnect(client, String:rejectmsg[], maxlen)
 		}
 		
 		SetClientInfo(client, "name", newname);
-		if (GetConVarBool(g_hAnnounce))
+		if (g_hAnnounce.BoolValue)
 		{
 			PrintToChatAll("[botnames] Bot %s created.", newname);
 			PrintToServer("[botnames] Bot %s created.", newname);
@@ -147,22 +146,23 @@ public bool:OnClientConnect(client, String:rejectmsg[], maxlen)
 // handle "SayText2" usermessages, including name change notifies!
 public Action:UserMessage_SayText2(UserMsg:msg_id, Handle:bf, const players[], playersNum, bool:reliable, bool:init)
 {
-	if (!GetConVarBool(g_hSuppress))
+	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
 	decl String:message[256];
 
-	BfReadShort(bf); // team color
+	BfRead bfRead = UserMessageToBfRead(bf);
+	bfRead.ReadShort(); // team color
 
-	BfReadString(bf, message, sizeof(message));
+	bfRead.ReadString(message, sizeof(message));
 	// check for Name_Change, not #TF_Name_Change (compatibility?)
 	if (StrContains(message, "Name_Change") != -1)
 	{
-		BfReadString(bf, message, sizeof(message)); // original
-		BfReadString(bf, message, sizeof(message)); // new
-		if (FindStringInArray(bot_names, message) != -1)
+		bfRead.ReadString(message, sizeof(message)); // original
+		bfRead.ReadString(message, sizeof(message)); // new
+		if (bot_names.FindString(message) != -1)
 		{
 			// 'tis a bot!
 			return Plugin_Handled;
@@ -173,14 +173,14 @@ public Action:UserMessage_SayText2(UserMsg:msg_id, Handle:bf, const players[], p
 }
 
 // handle player team change, to supress bot messages
-public Action:Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroadcast)
+public Action:Event_PlayerTeam(Event:event, const String:name[], bool:dontBroadcast)
 {
-	if (!GetConVarBool(g_hSuppress))
+	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
-	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+	new client = GetClientOfUserId(event.GetInt("userid"));
 	if (client == 0)
 	{
 		// weird error, ignore
@@ -189,7 +189,7 @@ public Action:Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroad
 	if (IsFakeClient(client) && !IsClientSourceTV(client))
 	{
 		// fake client == bot
-		SetEventBool(event, "silent", true);
+		event.SetBool("silent", true);
 		return Plugin_Changed;
 	}
 
@@ -197,31 +197,31 @@ public Action:Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroad
 }
 
 // handle player connect, to supress bot messages
-public Action:Event_PlayerConnect(Handle:event, const String:name[], bool:dontBroadcast)
+public Action:Event_PlayerConnect(Event:event, const String:name[], bool:dontBroadcast)
 {
-	if (!GetConVarBool(g_hSuppress))
+	if (!g_hSuppress.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 
 	decl String:networkID[32];
-	GetEventString(event, "networkid", networkID, sizeof(networkID));
+	event.GetString("networkid", networkID, sizeof(networkID));
 
 	if(!dontBroadcast && StrEqual(networkID, "BOT"))
 	{
 		// we got a bot connectin', resend event as no-broadcast
 		decl String:clientName[MAX_NAME_LENGTH], String:address[32];
-		GetEventString(event, "name", clientName, sizeof(clientName));
-		GetEventString(event, "address", address, sizeof(address));
+		event.GetString("name", clientName, sizeof(clientName));
+		event.GetString("address", address, sizeof(address));
 
-		new Handle:newEvent = CreateEvent("player_connect", true);
-		SetEventString(newEvent, "name", clientName);
-		SetEventInt(newEvent, "index", GetEventInt(event, "index"));
-		SetEventInt(newEvent, "userid", GetEventInt(event, "userid"));
-		SetEventString(newEvent, "networkid", networkID);
-		SetEventString(newEvent, "address", address);
+		new Event:newEvent = CreateEvent("player_connect", true);
+		newEvent.SetString("name", clientName);
+		newEvent.SetInt("index", event.GetInt("index"));
+		newEvent.SetInt("userid", event.GetInt("userid"));
+		newEvent.SetString("networkid", networkID);
+		newEvent.SetString("address", address);
 
-		FireEvent(newEvent, true);
+		newEvent.Fire(true);
 
 		return Plugin_Handled;
 	}
@@ -263,7 +263,7 @@ stock Action ChangeBotsPing(Handle:timer)
 		if(!IsValidEdict(i) || !IsClientInGame(i) || !IsFakeClient(i) || IsClientSourceTV(i))
 			continue;
 
-		SetEntData(g_iPlayerResourceEntity, g_iPing + (i * 4), GetRandomInt(GetConVarInt(g_hMinPing), GetConVarInt(g_hMaxPing)));
+		SetEntData(g_iPlayerResourceEntity, g_iPing + (i * 4), GetRandomInt(g_hMinPing.IntValue, g_hMaxPing.IntValue));
 	}
 	return Plugin_Continue;
 }
@@ -271,18 +271,18 @@ stock Action ChangeBotsPing(Handle:timer)
 // a function to generate name_redirects
 stock void GenerateRedirects()
 {
-	new loaded_names = GetArraySize(bot_names);
+	new loaded_names = bot_names.Length;
 
-	if (name_redirects != INVALID_HANDLE)
+	if (name_redirects != null)
 	{
-		ResizeArray(name_redirects, loaded_names);
+		name_redirects.Resize(loaded_names);
 	} else {
-		name_redirects = CreateArray(1, loaded_names);
+		name_redirects = new ArrayList(1, loaded_names);
 	}
 
 	for (new i = 0; i < loaded_names; i++)
 	{
-		SetArrayCell(name_redirects, i, i);
+		name_redirects.Set(i, i);
 		
 		// nothing to do random-wise if i == 0
 		if (i == 0)
@@ -291,9 +291,9 @@ stock void GenerateRedirects()
 		}
 
 		// now to introduce some chaos
-		if (GetConVarBool(g_hRandom))
+		if (g_hRandom.BoolValue)
 		{
-			SwapArrayItems(name_redirects, GetRandomInt(0, i - 1), i);
+			name_redirects.SwapAt(GetRandomInt(0, i - 1), i);
 		}
 	}
 }
@@ -305,15 +305,15 @@ stock void ReloadNames()
 	decl String:path[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, path, sizeof(path), BOT_NAME_FILE);
 	
-	if (bot_names != INVALID_HANDLE)
+	if (bot_names != null)
 	{
-		ClearArray(bot_names);
+		bot_names.Clear();
 	} else {
-		bot_names = CreateArray(MAX_NAME_LENGTH);
+		bot_names = new ArrayList(MAX_NAME_LENGTH);
 	}
 	
-	new Handle:file = OpenFile(path, "r");
-	if (file == INVALID_HANDLE)
+	new File:file = OpenFile(path, "r");
+	if (file == null)
 	{
 		//PrintToServer("bot name file unopened");
 		return;
@@ -325,11 +325,11 @@ stock void ReloadNames()
 	decl String:formedname[MAX_NAME_LENGTH];
 	decl String:prefix[MAX_NAME_LENGTH];
 
-	GetConVarString(g_hPrefix, prefix, MAX_NAME_LENGTH);
+	g_hPrefix.GetString(prefix, MAX_NAME_LENGTH);
 
-	while (IsEndOfFile(file) == false)
+	while (file.EndOfFile() == false)
 	{
-		if (ReadFileLine(file, newname, sizeof(newname)) == false)
+		if (file.ReadLine(newname, sizeof(newname)) == false)
 		{
 			break;
 		}
@@ -360,10 +360,10 @@ stock void ReloadNames()
 		TrimString(newname);
 		
 		Format(formedname, MAX_NAME_LENGTH, "%s%s", prefix, newname);
-		PushArrayString(bot_names, formedname);
+		bot_names.PushString(formedname);
 	}
 	
-	CloseHandle(file);
+	delete file;
 }
 
 stock void LoadWeaponRestrictions()
@@ -376,16 +376,16 @@ stock void LoadWeaponRestrictions()
 	BuildPath(Path_SM, path, sizeof(path), BOT_RESTRICTIONS_FILE);
 
 	File file = OpenFile(path, "r");
-	if (file == INVALID_HANDLE)
+	if (file == null)
 	{
 		LogError("Couldnt find %s", BOT_RESTRICTIONS_FILE);
 		return;
 	}
 
 	char sWeaponName[64] = "";
-	while (!IsEndOfFile(file))
+	while (!file.EndOfFile())
 	{
-		if (!ReadFileLine(file, sWeaponName, sizeof(sWeaponName)))
+		if (!file.ReadLine(sWeaponName, sizeof(sWeaponName)))
 			break;
 		
 		// trim off comments starting with // or #
