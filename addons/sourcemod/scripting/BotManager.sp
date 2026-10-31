@@ -52,6 +52,8 @@ public Plugin myinfo =
 
 public void OnPluginStart()
 {
+	LoadTranslations("botmanager.phrases");
+
 	g_hPrefix = CreateConVar("sm_botmanager_prefix", "", "Prefix for bot names (include a trailing space, if needed!)", FCVAR_NOTIFY);
 	g_hRandom = CreateConVar("sm_botmanager_random", "1", "Randomize names used", FCVAR_NOTIFY);
 	g_hAnnounce = CreateConVar("sm_botmanager_announce", "1", "Announce bots when added", FCVAR_NOTIFY);
@@ -138,7 +140,7 @@ public bool OnClientConnect(int client, char[] rejectmsg, int maxlen)
 		SetClientInfo(client, "name", newname);
 		if (g_hAnnounce.BoolValue)
 		{
-			PrintToChatAll("[botnames] Bot %s created.", newname);
+			PrintToChatAll("%t", "BM_Bot_Created", newname);
 			PrintToServer("[botnames] Bot %s created.", newname);
 		}
 	}
