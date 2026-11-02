@@ -1,0 +1,15 @@
+"Phrases"
+{
+
+	"BM_Bot_Created"
+	{
+		"#format"	"{1:s}"
+		"en"		"[botnames] Bot {1} created."
+		"fr"		"[botnames] Bot {1} créé."
+		"ru"		"[botnames] Бот {1} создан."
+		"es"		"[botnames] Bot {1} creado."
+		"de"		"[botnames] Bot {1} erstellt."
+		"pt"		"[botnames] Bot {1} criado."
+		"chi"		"[botnames] 已创建机器人 {1}。"
+	}
+}
