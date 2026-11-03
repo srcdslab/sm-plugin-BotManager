@@ -236,16 +236,16 @@ public Action Event_PlayerConnect(Event event, const char[] name, bool dontBroad
 public Action OnWeaponEquip(int client, int entity)
 {
 	if(!IsValidEntity(entity))
-		return;
+		return Plugin_Continue;
 
 	int HammerID = GetEntProp(entity, Prop_Data, "m_iHammerID");
 	// Should not be cleaned since it's a map spawned weapon
 	if(HammerID)
-		return;
+		return Plugin_Continue;
 
 	// Check if its a valid client
 	if (!IsValidEdict(client) || !IsClientInGame(client) || !IsFakeClient(client) || IsClientSourceTV(client))
-		return;
+		return Plugin_Continue;
 
 	char sClassName[64];
 	GetEntityClassname(entity, sClassName,sizeof(sClassName));
@@ -255,6 +255,8 @@ public Action OnWeaponEquip(int client, int entity)
 		if (StrEqual(g_sRestrictedWeapons[i], sClassName, true))
 			Client_RemoveWeapon(client, sClassName, false, true);
 	}
+
+	return Plugin_Continue;
 }
 
 stock Action ChangeBotsPing(Handle timer)
