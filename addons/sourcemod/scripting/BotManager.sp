@@ -46,7 +46,7 @@ public Plugin myinfo =
 	name = "BotManager",
 	author = "Rakeri, Knagg0, maxime1907",
 	description = "Manage bot's name, ping and weapon restictions",
-	version = "1.3.0",
+	version = "1.3.1",
 	url = ""
 }
 
