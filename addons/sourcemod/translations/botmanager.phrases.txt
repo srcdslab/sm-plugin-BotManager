@@ -11,5 +11,11 @@
 		"de"		"[botnames] Bot {1} erstellt."
 		"pt"		"[botnames] Bot {1} criado."
 		"chi"		"[botnames] 已创建机器人 {1}。"
+		"pl"		"[botnames] Bot {1} został utworzony."
+		"tr"		"[botnames] Bot {1} oluşturuldu."
+		"it"		"[botnames] Bot {1} creato."
+		"ua"		"[botnames] Бота {1} створено."
+		"zho"		"[botnames] 已建立機器人 {1}。"
+		"cze"		"[botnames] Bot {1} byl vytvořen."
 	}
 }
